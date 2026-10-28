@@ -9,11 +9,19 @@ geometric twist → get a closed design tree with `Parameters / Relations / Airf
 Construction / Wing / Ribs / Pose`, optionally sliced rib sections, symmetry, and XYZ
 rotation/translation that stay editable (formula-driven) inside CATIA.
 
+**Quick links:** [快速开始](快速开始.md) ·
+[中文说明书](使用说明.md) ·
+[安装指南（中文）](文档/环境安装指南.md) ·
+[Installation Guide (English)](INSTALL.en.md) ·
+[Releases](https://github.com/Zzzyyxx/catia-wing-tool/releases)
+
 ![wing](output/wing_CH10.jpg)
 
 ---
 
 ## 快速开始（30 秒）
+
+> 更短的版本见 **[快速开始.md](快速开始.md)**；换电脑装环境见 **[INSTALL.en.md](INSTALL.en.md)**。
 
 ```text
 1. 解压到纯英文路径（如 D:\CATIA_Wing_Tool）   ※ CATIA 的 SaveAs 不支持中文路径
