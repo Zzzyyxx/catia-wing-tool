@@ -757,23 +757,43 @@ class WingBuilder:
             print(f"    ! 接合失败: {str(exc)[:100]}")
             return
 
+        # ★ 关键：实体特征必须建在「零件几何体」(PartBody) 里。
+        #   若当前工作对象是几何图形集，AddNewCloseSurface 会直接失败（而且不提示原因）。
         try:
+            from pycatia.mec_mod_interfaces.shape import Shape
+
+            prev_work = None
+            try:
+                prev_work = self.part.in_work_object
+            except Exception:  # noqa: BLE001
+                pass
+            self.part.in_work_object = self.part.main_body
+
             raw = self.part.shape_factory.com_object
-            solid = raw.AddNewCloseSurface(self._ref(shell).com_object)
-            solid.Name = "实体"
+            raw_solid = raw.AddNewCloseSurface(self._ref(shell).com_object)
+            raw_solid.Name = "实体"
             self.part.update()
+            solid = Shape(raw_solid)
+
             try:
                 spa = self.doc.spa_workbench()
                 vol = spa.get_measurable(self._ref(solid)).volume
                 print(f"    ✓ 已封闭为实体，体积 = {vol:.6f} m³")
             except Exception:  # noqa: BLE001
                 print("    ✓ 已封闭为实体")
+
             self.main_surface = solid
+            self.solid_created = True
+            if prev_work is not None:
+                try:
+                    self.part.in_work_object = prev_work
+                except Exception:  # noqa: BLE001
+                    pass
         except Exception as exc:  # noqa: BLE001
-            print("    ! 「封闭曲面」不可用（本机 CATIA 未授权零件设计的实体命令）")
-            print(f"      原因：{str(exc)[:80]}")
-            print("      → 已保留「水密壳体」：可直接用于外流场网格；")
-            print("        要实体请在 CATIA 里手动点一次『封闭曲面』或『加厚』。")
+            print("    ! 「封闭曲面」失败，已保留水密壳体")
+            print(f"      原因：{str(exc)[:110]}")
+            print("      → 常见原因：壳体未完全缝合（有漏缝）。水密壳体可直接用于外流场网格；")
+            print("        要实体可在 CATIA 里手动点一次『封闭曲面』。")
             self.main_surface = shell
 
     # -- 对称 + XYZ 旋转 + XYZ 平移（全部公式驱动，CATIA 内改即更新）------
