@@ -62,6 +62,8 @@ class WingParams:
     ribs: bool = False             # 是否生成翼肋（等间距平面阵列 ∩ 翼面）
     rib_spacing: float = 20.0      # 翼肋间距 mm
     rib_slice: bool = False        # True=用"平面 ∩ 翼面"切片（CAD 原生做法，可能空切失败）
+    solid: bool = False            # 是否实体化（封口→接合→封闭曲面；无实体许可则保留水密壳体）
+    thickness: float = 2.0         # 加厚厚度 mm（仅当 CATIA 授权「加厚曲面」时用）
     ar_mode: str = "analytic"      # analytic（理论式）| measured（对齐 UP 主的测量式）
     half_wing: bool = True
     # ---- OpenVSP 风格：对称 + XYZ 旋转 + XYZ 平移（均为公式驱动，CATIA 内改即更新）----
@@ -103,7 +105,7 @@ class WingParams:
         return (f"翼型={Path(self.airfoil_file).name}, c_root={self.root_chord}, "
                 f"b={self.span}, Λ¼={self.sweep_quarter}°, λ={self.taper}, "
                 f"i={self.incidence}°, twist={self.twist}°, "
-                f"截面数={self.stations}, method={self.method}, live={self.live}, ribs={self.ribs}, "
+                f"截面数={self.stations}, method={self.method}, live={self.live}, ribs={self.ribs}, solid={self.solid}, "
                 f"sym={self.symmetric}, rot=({self.rot_x},{self.rot_y},{self.rot_z}), "
                 f"trans=({self.trans_x},{self.trans_y},{self.trans_z})"
                 + (f"/{self.rib_spacing}mm" if self.ribs else ""))
@@ -142,8 +144,9 @@ class BuildError(RuntimeError):
         "[4-5] 截面与多截面曲面": "截面几何不合法：截面数太少(建议 ≥3)、"
                                  "后掠/扭转过大导致相邻截面自交，或翼型点序混乱。",
         "[6] 对称与姿态": "旋转轴/平移方向创建失败；把旋转角与平移都设为 0 再试。",
+        "[6] 实体化": "封口/接合失败：截面曲线不闭合，或本机无实体许可（会保留水密壳体）。",
         "[7] 翼肋": "翼肋平面偏移方向或间距不合适；可把间距调大再试。",
-        "[8] 最终 update": "通常是前面某步留下的坏特征。看日志里最后一次成功的位置。",
+        "[9] 最终 update": "通常是前面某步留下的坏特征。看日志里最后一次成功的位置。",
         "[2] 参数与公式": "参数/公式创建失败：名称重复或单位不合法。",
     }
 
@@ -404,10 +407,11 @@ class WingBuilder:
                         self._loft_wing_live if p.live else self._loft_wing)
         else:
             self._stage("[4-5] 引导线与扫掠", self._sweep_wing)
+        self._stage("[6] 实体化", self._solidify)
         if p.ribs:
-            self._stage("[6] 翼肋", self._ribs)
-        self._stage("[7] 对称与姿态", self._transforms)
-        self._stage("[8] 最终 update", self.part.update)
+            self._stage("[7] 翼肋", self._ribs)
+        self._stage("[8] 对称与姿态", self._transforms)
+        self._stage("[9] 最终 update", self.part.update)
 
         print("    OK")
         self._report()
@@ -547,6 +551,7 @@ class WingBuilder:
             print("      → 常见原因：截面点数/方向不一致，或相邻截面自交")
 
         self.wing_body = wing
+        self.sections = sections          # 供实体化封口用
         self.main_surface = loft          # 对称/姿态在 _transforms() 里统一处理
 
 
@@ -645,6 +650,7 @@ class WingBuilder:
             print("      → 若反复失败，把截面数降到 5~7 再试")
 
         self.wing_body = wing
+        self.sections = sections
         self.main_surface = loft
 
 
@@ -702,6 +708,73 @@ class WingBuilder:
         self.part.update()
         self.wing_body = wing
         self.main_surface = sweep          # 对称/姿态在 _transforms() 里统一处理
+
+    # -- 实体化：两端封口 → 接合 → 尝试封闭曲面 ------------------------
+    def _solidify(self):
+        """把开口翼面变成封闭结构。
+
+        首尾截面填充封口 → 与翼面接合成水密壳体 → 尝试「封闭曲面」转实体。
+        实测本机 CATIA 未授权零件设计的实体命令（连标准圆柱都失败），
+        此时保留**水密壳体**并给出提示——壳体本身可直接用于外流场网格。
+        """
+        p = self.p
+        if not p.solid:
+            return
+        if not getattr(self, "sections", None):
+            print("\n[6] 实体化：缺少截面曲线，跳过")
+            return
+
+        print("\n[6] 实体化：两端封口 → 接合 → 封闭曲面 ...")
+        body = getattr(self, "work", None)
+        caps = []
+        for i, sec in enumerate((self.sections[0], self.sections[-1])):
+            try:
+                f = self.hsf.add_new_fill()
+                f.name = f"端封_{'根' if i == 0 else '梢'}"
+                f.add_bound(self._ref(sec))
+                body.append_hybrid_shape(f)
+                caps.append(f)
+            except Exception as exc:  # noqa: BLE001
+                print(f"    ! 端封_{i} 失败: {str(exc)[:80]}")
+        if len(caps) != 2:
+            print("    ! 封口不完整，跳过实体化")
+            return
+        self.part.update()
+
+        shell = self.main_surface
+        try:
+            j = self.hsf.add_new_join(self._ref(shell), self._ref(caps[0]))
+            j.name = "接合_端封1"
+            body.append_hybrid_shape(j)
+            self.part.update()
+            j2 = self.hsf.add_new_join(self._ref(j), self._ref(caps[1]))
+            j2.name = "水密壳体"
+            body.append_hybrid_shape(j2)
+            self.part.update()
+            shell = j2
+            print("    封口 + 接合 OK（水密壳体）")
+        except Exception as exc:  # noqa: BLE001
+            print(f"    ! 接合失败: {str(exc)[:100]}")
+            return
+
+        try:
+            raw = self.part.shape_factory.com_object
+            solid = raw.AddNewCloseSurface(self._ref(shell).com_object)
+            solid.Name = "实体"
+            self.part.update()
+            try:
+                spa = self.doc.spa_workbench()
+                vol = spa.get_measurable(self._ref(solid)).volume
+                print(f"    ✓ 已封闭为实体，体积 = {vol:.6f} m³")
+            except Exception:  # noqa: BLE001
+                print("    ✓ 已封闭为实体")
+            self.main_surface = solid
+        except Exception as exc:  # noqa: BLE001
+            print("    ! 「封闭曲面」不可用（本机 CATIA 未授权零件设计的实体命令）")
+            print(f"      原因：{str(exc)[:80]}")
+            print("      → 已保留「水密壳体」：可直接用于外流场网格；")
+            print("        要实体请在 CATIA 里手动点一次『封闭曲面』或『加厚』。")
+            self.main_surface = shell
 
     # -- 对称 + XYZ 旋转 + XYZ 平移（全部公式驱动，CATIA 内改即更新）------
     def _transforms(self):

@@ -291,6 +291,16 @@ class Launcher:
         ttk.Entry(box, textvariable=self.rib_spacing_var, width=7).grid(
             row=r + 3, column=3, sticky="w", pady=(8, 0))
 
+        # 实体化（封口→接合→尝试封闭曲面）
+        self.solid_var = BooleanVar(value=False)
+        ttk.Checkbutton(box, text="实体化（封口→接合→封闭曲面）", variable=self.solid_var).grid(
+            row=r + 4, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ttk.Label(box, text="厚[mm]", style="Panel.TLabel").grid(
+            row=r + 4, column=3, sticky="e", pady=(8, 0), padx=(0, 4))
+        self.thickness_var = StringVar(value="2.0")
+        ttk.Entry(box, textvariable=self.thickness_var, width=6).grid(
+            row=r + 4, column=3, sticky="w", pady=(8, 0), padx=(34, 0))
+
     # 对称与姿态（OpenVSP 风格：公式驱动，进 CATIA 后仍可改） ----------
     def _build_pose_panel(self, parent):
         ttk.Label(parent, text="④ 对称与姿态").pack(anchor="w", pady=(4, 0))
@@ -446,6 +456,10 @@ class Launcher:
             rib_spacing = float(self.rib_spacing_var.get())
         except (TypeError, ValueError):
             rib_spacing = 40.0
+        try:
+            thickness = float(self.thickness_var.get() or 2.0)
+        except (TypeError, ValueError):
+            thickness = 2.0
         pose = {}
         for k, v in self.pose_vars.items():
             try:
@@ -459,6 +473,8 @@ class Launcher:
             live=bool(self.live_var.get()),
             ribs=bool(self.ribs_var.get()),
             rib_spacing=rib_spacing,
+            solid=bool(self.solid_var.get()),
+            thickness=thickness,
             symmetric=bool(self.sym_var.get()),
             **pose,
             **vals,
