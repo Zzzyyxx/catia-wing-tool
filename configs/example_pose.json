@@ -1,0 +1,12 @@
+﻿{
+  "airfoil_file": "airfoils/CH10.dat",
+  "root_chord": 100.0, "span": 500.0, "sweep_quarter": 30.0,
+  "taper": 0.45, "incidence": 10.0, "twist": 10.0,
+  "stations": 7, "method": "loft",
+  "ribs": true, "rib_spacing": 40.0,
+  "ar_mode": "analytic",
+  "symmetric": true,
+  "rot_x": 5.0, "rot_y": 0.0, "rot_z": 10.0,
+  "trans_x": 50.0, "trans_y": 0.0, "trans_z": 20.0,
+  "save_path": "output/example_pose.CATPart"
+}

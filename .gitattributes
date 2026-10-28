@@ -1,0 +1,12 @@
+# .bat 必须是 CRLF，否则 cmd 解析会吃掉行首字符
+*.bat text eol=crlf
+
+# 代码统一 LF
+*.py   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+
+# 二进制
+*.CATPart binary
+*.png binary
+*.jpg binary

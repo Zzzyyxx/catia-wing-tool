@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 运行产物
+logs/*
+!logs/.gitkeep
+*.tmp
+_wing_builder_tmp.CATPart
+
+# 生成的大文件（示例 CATPart 请按需保留，默认不入库）
+output/*.CATPart
+!output/README.md
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
