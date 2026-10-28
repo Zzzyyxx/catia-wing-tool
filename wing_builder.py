@@ -57,6 +57,7 @@ class WingParams:
     taper: float = 0.45            # 梢根比
     incidence: float = 10.0        # 安装角 deg（根部）
     stations: int = 7              # 展向截面数（loft 模式）
+    live: bool = True              # True=参数化截面（缩放/旋转/平移全挂公式，CATIA 内改参数即更新）
     method: str = "loft"           # loft | sweep
     ribs: bool = False             # 是否生成翼肋（等间距平面阵列 ∩ 翼面）
     rib_spacing: float = 20.0      # 翼肋间距 mm
@@ -102,7 +103,7 @@ class WingParams:
         return (f"翼型={Path(self.airfoil_file).name}, c_root={self.root_chord}, "
                 f"b={self.span}, Λ¼={self.sweep_quarter}°, λ={self.taper}, "
                 f"i={self.incidence}°, twist={self.twist}°, "
-                f"截面数={self.stations}, method={self.method}, ribs={self.ribs}, "
+                f"截面数={self.stations}, method={self.method}, live={self.live}, ribs={self.ribs}, "
                 f"sym={self.symmetric}, rot=({self.rot_x},{self.rot_y},{self.rot_z}), "
                 f"trans=({self.trans_x},{self.trans_y},{self.trans_z})"
                 + (f"/{self.rib_spacing}mm" if self.ribs else ""))
@@ -399,7 +400,8 @@ class WingBuilder:
         self._stage("[2] 参数与公式", self._parameters)
         self._stage("[3] 翼型库（草图）", self._airfoil_library)
         if p.method == "loft":
-            self._stage("[4-5] 截面与多截面曲面", self._loft_wing)
+            self._stage("[4-5] 截面与多截面曲面",
+                        self._loft_wing_live if p.live else self._loft_wing)
         else:
             self._stage("[4-5] 引导线与扫掠", self._sweep_wing)
         if p.ribs:
@@ -546,6 +548,105 @@ class WingBuilder:
 
         self.wing_body = wing
         self.main_surface = loft          # 对称/姿态在 _transforms() 里统一处理
+
+
+    # -- 参数化多截面：截面 = 基准翼型 + 缩放 + 旋转 + 平移（全挂公式）------
+    def _loft_wing_live(self):
+        """每个截面都由「缩放→旋转→平移」四个特征生成，参数全部写成公式。
+
+        好处：在 CATIA 里改 翼根弦长 / 翼展展长 / 后掠角 / 梢根比 / 安装角 / 几何扭转，
+        Update 后整片机翼自动重建，无需重跑脚本。
+        """
+        p = self.p
+        n = max(int(p.stations), 2)
+        print(f"\n[4-5] 参数化多截面：{n} 个截面（缩放/旋转/平移均挂公式）...")
+        work = self.part.hybrid_bodies.add()
+        work.name = "实现过程"
+        self.work = work
+
+        # 基准翼型：弦长固定 100mm，前缘在原点（后面用公式缩放到各站弦长）
+        base = self.hsf.add_new_spline()
+        for xi, eta in self.norm_pts:
+            base.add_point(self.hsf.add_new_point_coords([[xi * 100.0, 0.0, eta * 100.0]])[0])
+        base.set_closing(1)
+        base.name = "基准翼型_100mm"
+        work.append_hybrid_shape(base)
+
+        center = self.hsf.add_new_point_coords([[0.0, 0.0, 0.0]])[0]
+        center.name = "缩放中心"
+        work.append_hybrid_shape(center)
+
+        # 旋转轴：沿展向 Y（长度取半展长，仅作方向用）
+        ref_len = max(float(self.d["half_span"]), 100.0)
+        a = self.hsf.add_new_point_coords([[0.0, 0.0, 0.0]])[0]
+        b = self.hsf.add_new_point_coords([[0.0, ref_len, 0.0]])[0]
+        yaxis = self.hsf.add_new_line_pt_pt(self._ref(a), self._ref(b))
+        yaxis.name = "展向轴"
+        work.append_hybrid_shape(yaxis)
+        self.part.update()
+        print("    基准翼型、缩放中心、展向轴 OK")
+
+        sections = []
+        for i in range(n):
+            f = i / (n - 1) if n > 1 else 0.0
+            tag = f"{i + 1:02d}"
+
+            # 缩放：弦长 c_i = c_root * (1 + (λ-1)f)  → 比率 = c_i / 100mm
+            sc = self.hsf.add_new_hybrid_scaling(self._ref(base), self._ref(center), 1.0)
+            sc.name = f"截面{tag}_缩放"
+            work.append_hybrid_shape(sc)
+            self._formula(
+                f"截面{tag}_缩放公式", sc.ratio,
+                f"(`翼根弦长`/100mm)*(1+(`梢根比`-1)*{f:.6f})",
+            )
+
+            # 旋转：扭转角 θ_i = 安装角 + 几何扭转·f（绕展向轴，前缘为转心）
+            rot = self.hsf.add_new_rotate(self._ref(sc), self._ref(yaxis), 0.0)
+            rot.name = f"截面{tag}_旋转"
+            work.append_hybrid_shape(rot)
+            self._formula(f"截面{tag}_旋转公式", rot.angle,
+                          f"`安装角`+`几何扭转`*{f:.6f}")
+
+            # 平移 X：x_le_i = 0.25c_root + y_i·tan(Λ) - 0.25·c_i
+            dx = self.hsf.add_new_direction_by_coord(1.0, 0.0, 0.0)
+            tx = self.hsf.add_new_translate(self._ref(rot), dx, 0.0)
+            tx.name = f"截面{tag}_平移X"
+            work.append_hybrid_shape(tx)
+            self._formula(
+                f"截面{tag}_平移X公式", tx.distance,
+                f"0.25*`翼根弦长`+(`翼展展长`/2*{f:.6f})*tan(`后掠角`)"
+                f"-0.25*(`翼根弦长`*(1+(`梢根比`-1)*{f:.6f}))",
+            )
+
+            # 平移 Y：y_i = 半展长 · f
+            dy = self.hsf.add_new_direction_by_coord(0.0, 1.0, 0.0)
+            ty = self.hsf.add_new_translate(self._ref(tx), dy, 0.0)
+            ty.name = f"截面{tag}_平移Y"
+            work.append_hybrid_shape(ty)
+            self._formula(f"截面{tag}_平移Y公式", ty.distance, f"`翼展展长`/2*{f:.6f}")
+
+            self.part.update()
+            sections.append(ty)
+
+        print(f"    {n} 个截面的公式链建立完成")
+
+        wing = self.part.hybrid_bodies.add()
+        wing.name = "机翼"
+        loft = self.hsf.add_new_loft()
+        for sec in sections:
+            loft.add_section_to_loft(self._ref(sec), 1, vba_nothing)
+        wing.append_hybrid_shape(loft)
+        loft.name = "多截面曲面"
+        try:
+            self.part.update()
+            print("    多截面曲面 update 通过")
+        except Exception as exc:  # noqa: BLE001
+            print(f"    ! update 失败: {str(exc)[:160]}")
+            print("      → 若反复失败，把截面数降到 5~7 再试")
+
+        self.wing_body = wing
+        self.main_surface = loft
+
 
     # -- 方案 B：扫掠（保留） -------------------------------------------
     def _sweep_wing(self):

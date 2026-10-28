@@ -271,18 +271,25 @@ class Launcher:
         cb.grid(row=r, column=1, columnspan=3, sticky="ew", pady=(8, 3))
         cb.bind("<<ComboboxSelected>>", lambda *_: self._refresh_preview())
 
+        # 参数化截面：让弦长/展长/后掠/梢根比/扭转在 CATIA 里改也能重建
+        self.live_var = BooleanVar(value=True)
+        ttk.Checkbutton(
+            box, text="参数化截面（CATIA 内改 弦长/展长/后掠/梢根比/扭转 会自动重建）",
+            variable=self.live_var,
+        ).grid(row=r + 1, column=0, columnspan=4, sticky="w", pady=(6, 0))
+
         self.derived_label = ttk.Label(box, text="", style="Value.TLabel", justify="left")
-        self.derived_label.grid(row=r + 1, column=0, columnspan=4, sticky="w", pady=(8, 0))
+        self.derived_label.grid(row=r + 2, column=0, columnspan=4, sticky="w", pady=(6, 0))
 
         # 翼肋（对齐 UP 主第 3 集：等间距平面阵列 ∩ 翼面）
         self.ribs_var = BooleanVar(value=False)
         ttk.Checkbutton(box, text="生成翼肋", variable=self.ribs_var).grid(
-            row=r + 2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+            row=r + 3, column=0, columnspan=2, sticky="w", pady=(8, 0))
         ttk.Label(box, text="间距[mm]", style="Panel.TLabel").grid(
-            row=r + 2, column=2, sticky="w", pady=(8, 0))
+            row=r + 3, column=2, sticky="w", pady=(8, 0))
         self.rib_spacing_var = StringVar(value="40")
         ttk.Entry(box, textvariable=self.rib_spacing_var, width=7).grid(
-            row=r + 2, column=3, sticky="w", pady=(8, 0))
+            row=r + 3, column=3, sticky="w", pady=(8, 0))
 
     # 对称与姿态（OpenVSP 风格：公式驱动，进 CATIA 后仍可改） ----------
     def _build_pose_panel(self, parent):
@@ -449,6 +456,7 @@ class Launcher:
             airfoil_file=airfoil,
             save_path=self.save_var.get().strip(),
             method=m,
+            live=bool(self.live_var.get()),
             ribs=bool(self.ribs_var.get()),
             rib_spacing=rib_spacing,
             symmetric=bool(self.sym_var.get()),
