@@ -1,4 +1,5 @@
 @echo off
+chcp 936 >nul
 title CATIA Wing Tool - Launcher
 cd /d "%~dp0"
 

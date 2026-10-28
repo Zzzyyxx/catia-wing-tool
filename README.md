@@ -32,28 +32,53 @@ python wing_builder.py --config configs\example_basic.json --dry-run
 
 ---
 
-## 环境要求
+## 环境要求（换电脑必看）
 
 | 项 | 值 |
 |---|---|
-| Python | **3.11**（推荐 conda 环境，名字随意，下文以 `catia311` 为例） |
-| 依赖 | `pycatia`（0.10.x）、`pywin32` |
-| CAD | CATIA V5（已注册 COM：`CATIA.Application`） |
-| 系统 | Windows（COM 自动化 + tkinter 界面） |
+| 系统 | Windows |
+| CAD | **CATIA V5**（能正常启动，且 COM 已注册 `CATIA.Application`） |
+| Python | **3.11**（3.13/3.14 目前装不上 `pywin32` 轮子）；**位数要与 CATIA 一致**（64 位 CATIA → 64 位 Python） |
+| 依赖 | `pycatia`（0.10.x，会自带 `pywin32`） |
 
-```powershell
+### 三种装法，任选其一
+
+**① 一键脚本（已有 conda 时最省事）**
+
+```text
+双击 工具\安装环境.bat
+```
+
+自动建 `catia311` 环境 → 装 pycatia（清华镜像）→ 设 `CATIA_PY` → 跑自检。
+
+**② conda 手动（3 条命令）**
+
+```bat
 conda create -n catia311 python=3.11 -y
 conda activate catia311
 python -m pip install pycatia
 ```
 
-自检：双击 `工具\环境检查.bat`，会依次检查解释器、`pycatia` 导入、以及建 Part / 建点 /
-建多截面曲面 / 知识工程参数等接口是否可用。
+**③ 官方 Python + venv（不想装 Anaconda）**
+
+```bat
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install pycatia
+setx CATIA_PY "%CD%\.venv\Scripts\python.exe"
+```
+
+> 装在别处时，用 `setx CATIA_PY "<那个 python.exe 的完整路径>"` 告诉启动器（新开终端生效）。
+> 启动器查找顺序：`CATIA_PY` → `%USERPROFILE%\anaconda3\envs\catia311` → `%ProgramData%\anaconda3\...` → PATH 上的 `python`。
+
+### 验证
+
+双击 **`工具\环境检查.bat`**：依次检查解释器版本、`pycatia` 导入、CATIA 连接、
+建 Part / 建点 / 多截面曲面 / 知识工程参数。全绿即可用。
 
 > 不需要手动先开 CATIA —— 程序通过 COM 拉起（冷启动约 15 秒）。
-
-`启动器.bat` 的 Python 查找顺序：环境变量 `CATIA_PY` → 本机已装的 `catia311` 路径 →
-PATH 上的 `python`。换机器时最省事的做法是设一个 `CATIA_PY`。
+> 完整安装步骤、常见报错（`无效的类字符串`、`服务器运行失败`、pywin32 编译失败等）
+> 见 **`文档/环境安装指南.md`**。
 
 ---
 
@@ -68,8 +93,8 @@ PATH 上的 `python`。换机器时最省事的做法是设一个 `CATIA_PY`。
 | `airfoils/` | 翼型库：`CH10.dat`（XFLR5 三列格式示例）、`NACA0018.dat` |
 | `configs/` | 示例配置：`example_basic` / `example_with_ribs` / `example_pose` |
 | `output/` | 生成的 `.CATPart` 与截图（含示例成品） |
-| `文档/` | 技术文档：接口实测与可行性分析、参考视频的建模流程笔记 |
-| `工具/` | 环境检查脚本 + 两个 CATIA 自动化探针 |
+| `文档/` | **环境安装指南**、接口实测与可行性分析、参考视频的建模流程笔记 |
+| `工具/` | 安装环境脚本、环境检查脚本、两个 CATIA 自动化探针 |
 | `logs/` | 运行日志（每次生成自动写入，已 gitignore） |
 
 ---

@@ -1,4 +1,5 @@
 @echo off
+chcp 936 >nul
 title CATIA 自动化环境检查
 cd /d "%~dp0.."
 
